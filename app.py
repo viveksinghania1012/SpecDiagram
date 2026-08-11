@@ -1,7 +1,7 @@
 import gradio as gr
 from dotenv import load_dotenv
 from services.imagen_api import generate_clean_schematic
-from utils.drawing_engine import add_deterministic_dimension
+from utils.drawing_engine import add_dimension_line
 
 # Initialize environment variables
 load_dotenv()
@@ -16,18 +16,26 @@ def generate_base(input_image):
     return schematic_img, []  
 
 def record_click(img, evt: gr.SelectData, clicks):
-    # (Keep record_click function the same)
     clicks.append(evt.index)
     return clicks
 
-def apply_label(img, text, clicks):
-    # (Keep apply_label function the same)
+def apply_h(img, text, clicks):
     if img is None or len(clicks) < 2:
         return img, clicks
-    coord1 = clicks[-2]
-    coord2 = clicks[-1]
-    labeled_img = add_deterministic_dimension(img, text, coord1, coord2)
-    return labeled_img, clicks
+    coord1, coord2 = clicks[-2], clicks[-1]
+    return add_dimension_line(img, text, coord1, coord2, orientation="vertical"), clicks
+
+def apply_w(img, text, clicks):
+    if img is None or len(clicks) < 2:
+        return img, clicks
+    coord1, coord2 = clicks[-2], clicks[-1]
+    return add_dimension_line(img, text, coord1, coord2, orientation="horizontal"), clicks
+
+def apply_d(img, text, clicks):
+    if img is None or len(clicks) < 2:
+        return img, clicks
+    coord1, coord2 = clicks[-2], clicks[-1]
+    return add_dimension_line(img, text, coord1, coord2, orientation="depth"), clicks
 
 # Build the Web UI
 with gr.Blocks() as demo:
@@ -36,24 +44,29 @@ with gr.Blocks() as demo:
     with gr.Row():
         with gr.Column(scale=1):
             gr.Markdown("### 1. Upload Product Photo")
-            # REPLACE TEXTBOX WITH IMAGE UPLOAD
             photo_in = gr.Image(type="pil", label="Upload Product Photo (JPG/PNG)")
             generate_btn = gr.Button("Generate Schematic Template", variant="primary")
             
-            gr.Markdown("### 2. Apply Dimensional Data")
-            gr.Markdown("*Click twice directly on the schematic to set points.*")
-            dim_text = gr.Textbox(label="Dimension Text (e.g., 39'' H)")
-            apply_btn = gr.Button("Apply Dimension Label")
+            gr.Markdown("### 2. Apply Dimensions")
+            gr.Markdown("*For each step: click two points on the schematic, then Apply.*")
+            with gr.Group():
+                h_text = gr.Textbox(label="Height (e.g. 39' H)")
+                btn_h = gr.Button("Apply Height")
+            with gr.Group():
+                w_text = gr.Textbox(label="Width (e.g. 22' W)")
+                btn_w = gr.Button("Apply Width")
+            with gr.Group():
+                d_text = gr.Textbox(label="Depth (e.g. 25' D)")
+                btn_d = gr.Button("Apply Depth")
             
         with gr.Column(scale=2):
             output_img = gr.Image(type="pil", label="Schematic Interactive Canvas")
             
-    # (Keep click_state and event wiring same, update inputs/outputs)
     click_state = gr.State([])
     
     generate_btn.click(
         fn=generate_base, 
-        inputs=[photo_in], # Input is now the photo, not text
+        inputs=[photo_in],
         outputs=[output_img, click_state]
     )
     
@@ -63,13 +76,22 @@ with gr.Blocks() as demo:
         outputs=[click_state]
     )
     
-    apply_btn.click(
-        fn=apply_label,
-        inputs=[output_img, dim_text, click_state],
+    btn_h.click(
+        fn=apply_h,
+        inputs=[output_img, h_text, click_state],
+        outputs=[output_img, click_state]
+    )
+    btn_w.click(
+        fn=apply_w,
+        inputs=[output_img, w_text, click_state],
+        outputs=[output_img, click_state]
+    )
+    btn_d.click(
+        fn=apply_d,
+        inputs=[output_img, d_text, click_state],
         outputs=[output_img, click_state]
     )
 
 if __name__ == "__main__":
     print("Initializing local Multimodal server...")
-    # Move the theme parameter to the launch method here
     demo.launch(theme=gr.themes.Soft())

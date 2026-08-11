@@ -1,10 +1,7 @@
-import math
 from PIL import ImageDraw, ImageFont
+import math
 
-def add_deterministic_dimension(img, text, coord1, coord2, offset=50):
-    """
-    Draws CAD-style dimension lines with offset leaders and masked text.
-    """
+def add_dimension_line(img, text, coord1, coord2, orientation="vertical", offset=50):
     output_img = img.copy().convert("RGB")
     draw = ImageDraw.Draw(output_img)
     
@@ -13,7 +10,6 @@ def add_deterministic_dimension(img, text, coord1, coord2, offset=50):
     bg_color = (255, 255, 255)
     line_width = 2
     
-    # Load font with fallback size scaling
     try:
         font = ImageFont.truetype("arial.ttf", 36)
     except IOError:
@@ -25,43 +21,49 @@ def add_deterministic_dimension(img, text, coord1, coord2, offset=50):
     x1, y1 = coord1
     x2, y2 = coord2
 
-    # Determine primary direction (Vertical vs Horizontal)
-    is_vertical = abs(y2 - y1) > abs(x2 - x1)
-
-    if is_vertical:
-        # Shift line to the left of the leftmost click
+    if orientation == "vertical":
         offset_x = min(x1, x2) - offset
         p1_line = (offset_x, y1)
         p2_line = (offset_x, y2)
-        
-        # Leader lines connecting clicks to dimension line
         draw.line([(x1, y1), (offset_x - 10, y1)], fill=line_color, width=line_width)
         draw.line([(x2, y2), (offset_x - 10, y2)], fill=line_color, width=line_width)
-    else:
-        # Shift line above the topmost click
-        offset_y = min(y1, y2) - offset
-        p1_line = (x1, offset_y)
-        p2_line = (x2, offset_y)
+        draw.line([p1_line, p2_line], fill=line_color, width=line_width)
         
-        # Leader lines
-        draw.line([(x1, y1), (x1, offset_y - 10)], fill=line_color, width=line_width)
-        draw.line([(x2, y2), (x2, offset_y - 10)], fill=line_color, width=line_width)
+    elif orientation == "horizontal":
+        # Calculate angle of the object base vector and offset perpendicularly
+        dx = x2 - x1
+        dy = y2 - y1
+        length = math.hypot(dx, dy)
+        if length == 0:
+            length = 1
+        ux, uy = dx / length, dy / length
+        # Perpendicular vector pointing outward/downward
+        px, py = -uy, ux
+        
+        p1_line = (x1 + px * offset, y1 + py * offset)
+        p2_line = (x2 + px * offset, y2 + py * offset)
+        
+        draw.line([(x1, y1), p1_line], fill=line_color, width=line_width)
+        draw.line([(x2, y2), p2_line], fill=line_color, width=line_width)
+        draw.line([p1_line, p2_line], fill=line_color, width=line_width)
+        
+    elif orientation == "depth":
+        # Push completely outside the bounding box along the isometric depth axis
+        offset_x = -offset * 1.2
+        offset_y = offset * 1.2
+        p1_line = (x1 + offset_x, y1 + offset_y)
+        p2_line = (x2 + offset_x, y2 + offset_y)
+        
+        draw.line([(x1, y1), p1_line], fill=line_color, width=line_width)
+        draw.line([(x2, y2), p2_line], fill=line_color, width=line_width)
+        draw.line([p1_line, p2_line], fill=line_color, width=line_width)
 
-    # Draw main dimension line
-    draw.line([p1_line, p2_line], fill=line_color, width=line_width)
-
-    # Midpoint for label placement
     cx = (p1_line[0] + p2_line[0]) / 2
     cy = (p1_line[1] + p2_line[1]) / 2
 
-    # Calculate text bounding box to render background mask
     bbox = draw.textbbox((cx, cy), text, font=font, anchor="mm")
     padded_bbox = (bbox[0] - 6, bbox[1] - 4, bbox[2] + 6, bbox[3] + 4)
-
-    # Draw white background rectangle to break the line behind text
     draw.rectangle(padded_bbox, fill=bg_color)
-
-    # Render text
     draw.text((cx, cy), text, fill=text_color, font=font, anchor="mm")
-
+    
     return output_img

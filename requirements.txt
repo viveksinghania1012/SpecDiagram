@@ -3,6 +3,7 @@ google-genai>=0.1.0
 
 # Image processing and drawing layer
 Pillow>=10.0.0
+numpy>=1.26.0
 
 # UI framework for click coordinate capture & preview
 gradio>=4.0.0

@@ -3,3 +3,7 @@ venv/
 __pycache__/
 *.pyc
 outputs/
+
+# Local debug artifacts
+debug_*.png
+debug_anchors.py

@@ -1,4 +1,3 @@
-import math
 import re
 
 
@@ -97,41 +96,30 @@ def calculate_layout(bbox, specs, anchors=None):
             "offset": 55,
         })
 
-    # Seat Width: only when it differs from overall W (e.g. chairs with arms)
+    # Seat W: cushion front-left → front-right (full front lip).
     if seat.get("w") and not _same_dim(seat.get("w"), overall.get("w")):
-        if seat_left and seat_right and abs(seat_right[0] - seat_left[0]) > 20:
+        cfl = anchors.get("cushion_front_left") or seat_left
+        cfr = anchors.get("cushion_front_right") or seat_right
+        if cfl and cfr and abs(cfr[0] - cfl[0]) > 12:
             layout.append({
                 "type": "seat_w",
                 "text": seat["w"],
-                "p1": seat_left,
-                "p2": seat_right,
+                "p1": cfl,
+                "p2": cfr,
                 "orientation": "horizontal",
-                "offset": 90,
+                "offset": 28,
             })
 
-    # Seat Depth: parallel to overall D (same direction as left seat edge / floor depth)
+    # Seat D: cushion front-left → rear-left (left cushion edge only).
     if seat.get("d") and not _same_dim(seat.get("d"), overall.get("d")):
-        od = _inches(overall.get("d"))
-        sd = _inches(seat.get("d"))
-        if front_leg_base and rear_foot_base and seat_top and od and sd and od > 0:
-            fx, fy = front_leg_base
-            rx, ry = rear_foot_base
-            dx, dy = rx - fx, ry - fy
-            overall_len = math.hypot(dx, dy) or 1.0
-            ux, uy = dx / overall_len, dy / overall_len
-            seat_len = overall_len * (sd / od)
-
-            # Anchor the back at rear-left seat top; step toward the front
-            # along the overall-D axis so the line stays parallel to overall D.
-            back_x = (seat_back or rear_foot_base)[0]
-            back_y = seat_top[1]
-            p2 = (back_x, back_y)
-            p1 = (back_x - ux * seat_len, back_y - uy * seat_len)
+        cfl = anchors.get("cushion_front_left") or seat_front
+        crl = anchors.get("cushion_rear_left") or seat_back or seat_top
+        if cfl and crl and (abs(cfl[0] - crl[0]) > 8 or abs(cfl[1] - crl[1]) > 8):
             layout.append({
                 "type": "seat_d",
                 "text": seat["d"],
-                "p1": p1,
-                "p2": p2,
+                "p1": cfl,
+                "p2": crl,
                 "orientation": "depth",
                 "offset": 35,
             })

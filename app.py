@@ -9,6 +9,7 @@ from utils.drawing_engine import add_dimension_line
 from utils.edge_detector import detect_chair_anchors
 from utils.layout_engine import calculate_layout
 from utils.spec_parser import parse_spec_text
+from utils.vision_locator import get_schematic_corners, merge_vision_anchors
 
 # Initialize environment variables
 load_dotenv()
@@ -69,6 +70,13 @@ def generate_base(input_image, specs=None, raw_specs_text=None):
         bbox = anchors.get("bbox")
         if not bbox:
             return schematic_img, []
+
+        try:
+            vision_pts = get_schematic_corners(tmp_path)
+            anchors = merge_vision_anchors(anchors, vision_pts)
+            print(f"vision corners: {vision_pts}")
+        except Exception as vis_exc:
+            print(f"vision corners failed (using pixel anchors): {vis_exc}")
 
         schematic_img, anchors = _pad_schematic(schematic_img, anchors)
         bbox = anchors.get("bbox")

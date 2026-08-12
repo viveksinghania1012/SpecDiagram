@@ -181,13 +181,27 @@ def detect_chair_anchors(image_path):
     runs = _cluster_runs(dense_rows, gap=1)
 
     if runs:
-        scored = []
+        # Prefer the uppermost substantial slab (cushion), not the thickest
+        # (woven seat deck / apron often wins on thickness alone).
+        min_thick = max(4, int(height * 0.01))
+        candidates = []
         for r0, r1 in runs:
             thick = r1 - r0 + 1
+            if thick < min_thick:
+                continue
             ink = int(np.sum(arr[r0 : r1 + 1, x0 : x1 + 1] < 200))
-            scored.append((thick, ink, r0, r1))
-        scored.sort(key=lambda t: (t[0], t[1]), reverse=True)
-        _thick, _ink, cushion_top_front, cushion_bot = scored[0]
+            candidates.append((r0, r1, thick, ink))
+        if candidates:
+            candidates.sort(key=lambda t: (t[0], -t[2], -t[3]))
+            cushion_top_front, cushion_bot = candidates[0][0], candidates[0][1]
+        else:
+            scored = []
+            for r0, r1 in runs:
+                thick = r1 - r0 + 1
+                ink = int(np.sum(arr[r0 : r1 + 1, x0 : x1 + 1] < 200))
+                scored.append((thick, ink, r0, r1))
+            scored.sort(key=lambda t: (t[0], t[1]), reverse=True)
+            _thick, _ink, cushion_top_front, cushion_bot = scored[0]
     else:
         cushion_top_front = min_y + int(height * 0.50)
         cushion_bot = cushion_top_front + max(8, int(height * 0.06))
@@ -215,16 +229,55 @@ def detect_chair_anchors(image_path):
             # Uppermost ink in the top-edge band = visual cushion top on the left.
             seat_corner_y = min(ink_rows)
 
-    # Seat pan endpoints for Seat W / Seat D.
-    # Seat W: across the seat at seat height (front bay).
-    # Seat D: along the side depth axis (must have dy like overall D, or the
-    # line collapses to horizontal and looks like width).
-    seat_left = (x0, seat_corner_y)
-    seat_right = (x1, seat_corner_y)
-    # Front of seat = front-left of cushion (lower on page); back = rear-left
-    # seat/back junction (higher on page / smaller Y).
-    seat_front = (front_leg_x, int(cushion_top_front))
-    seat_back = (rear_foot_x, seat_corner_y)
+    # Seat W / D: TOP-FACE corners only (not bottom lip, not floor vectors).
+    # Search full cushion width (includes left overhang past the front-leg bay).
+    slab_lo = max(min_y, cushion_top_front - max(4, int(height * 0.02)))
+    slab_hi = min(max_y, cushion_bot + max(2, int(height * 0.01)))
+    search_x0 = max(min_x, min(rear_foot_x, front_leg_x) - max(4, int(width * 0.02)))
+    search_x1 = min(max_x, max(front_right_x, front_leg_x) + max(4, int(width * 0.02)))
+    min_thick = max(4, int(max(1, cushion_bot - cushion_top_front) * 0.35))
+    top_tol = max(8, int(height * 0.05))
+
+    tops = []
+    for x in range(search_x0, search_x1 + 1):
+        ys = np.where(arr[slab_lo : slab_hi + 1, x] < 200)[0]
+        if len(ys) < 2:
+            continue
+        top = slab_lo + int(ys[0])
+        bot = slab_lo + int(ys[-1])
+        if bot - top < min_thick:
+            continue
+        if top < cushion_top_front - top_tol:
+            continue
+        tops.append((x, top))
+
+    cushion_fl = (front_leg_x, int(cushion_top_front))
+    cushion_fr = (front_right_x, int(cushion_top_front))
+    if len(tops) >= 2:
+        x_min, x_max = tops[0][0], tops[-1][0]
+        # Outer end-bands (not halves): in 3/4 the right half's max-Y is near
+        # mid-span, which collapses seat W to a stub under the "20\"" label.
+        band = max(6, int(0.18 * (x_max - x_min)))
+        left_band = [p for p in tops if p[0] <= x_min + band]
+        right_band = [p for p in tops if p[0] >= x_max - band]
+        if left_band:
+            cushion_fl = max(left_band, key=lambda p: p[1])
+        if right_band:
+            cushion_fr = max(right_band, key=lambda p: p[1])
+
+    # Seat D: same top front-left → top rear-left on the left cushion edge.
+    cushion_rl = (rear_foot_x, seat_corner_y)
+    lx0 = max(min_x, min(rear_foot_x, cushion_fl[0]) - max(6, int(width * 0.03)))
+    lx1 = min(max_x, max(rear_foot_x, cushion_fl[0]) + max(12, int(width * 0.06)))
+    if lx1 > lx0:
+        xs = np.where(arr[seat_corner_y, lx0 : lx1 + 1] < 200)[0]
+        if len(xs):
+            cushion_rl = (lx0 + int(xs[0]), seat_corner_y)
+
+    seat_left = cushion_fl
+    seat_right = cushion_fr
+    seat_front = cushion_fl
+    seat_back = cushion_rl
     cushion_top = (rear_foot_x, seat_corner_y)
     cushion_bottom = (rear_foot_x, int(cushion_bot))
 
@@ -236,6 +289,9 @@ def detect_chair_anchors(image_path):
         "seat_right": seat_right,
         "seat_front": seat_front,
         "seat_back": seat_back,
+        "cushion_front_left": cushion_fl,
+        "cushion_front_right": cushion_fr,
+        "cushion_rear_left": cushion_rl,
         "cushion_top": cushion_top,
         "cushion_bottom": cushion_bottom,
         "front_leg_base": (front_leg_x, front_leg_y),

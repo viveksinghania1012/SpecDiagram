@@ -31,44 +31,51 @@ def _vertical_span_px(item):
     return abs(float(p2[1]) - float(p1[1]))
 
 
-def flag_seat_height_errors(layout, threshold=0.25, min_overall_px=40, min_seat_px=20):
+def flag_height_errors(layout, dim_type, threshold=0.25, min_overall_px=40, min_dim_px=20):
     """
-    Scale from overall H pixels/inches; flag seat H when given is ≥threshold off.
+    Scale from overall H pixels/inches; flag a vertical dim when given is ≥threshold off.
     Leaves the dim in place; drawing uses flagged to color the number red.
     """
     overall_h = next((i for i in layout if i.get("type") == "overall_h"), None)
-    seat_h = next((i for i in layout if i.get("type") == "seat_h"), None)
-    if not overall_h or not seat_h:
+    target = next((i for i in layout if i.get("type") == dim_type), None)
+    if not overall_h or not target:
         return layout
 
     overall_in = _inches(overall_h.get("text"))
-    given_in = _inches(seat_h.get("text"))
+    given_in = _inches(target.get("text"))
     overall_px = _vertical_span_px(overall_h)
-    seat_px = _vertical_span_px(seat_h)
+    dim_px = _vertical_span_px(target)
     if (
         overall_in is None
         or overall_in <= 0
         or given_in is None
         or given_in <= 0
         or overall_px < min_overall_px
-        or seat_px < min_seat_px
+        or dim_px < min_dim_px
     ):
         return layout
 
-    measured_in = seat_px * (overall_in / overall_px)
+    measured_in = dim_px * (overall_in / overall_px)
     rel_err = abs(measured_in - given_in) / given_in
     if rel_err >= threshold:
-        seat_h["flagged"] = True
+        target["flagged"] = True
         print(
-            f"audit seat_h: given {given_in}\" measured ~{measured_in:.1f}\" "
+            f"audit {dim_type}: given {given_in}\" measured ~{measured_in:.1f}\" "
             f"({rel_err:.0%} off) → flagged"
         )
     else:
         print(
-            f"audit seat_h: given {given_in}\" measured ~{measured_in:.1f}\" "
+            f"audit {dim_type}: given {given_in}\" measured ~{measured_in:.1f}\" "
             f"({rel_err:.0%} off) → ok"
         )
     return layout
+
+
+def flag_seat_height_errors(layout, threshold=0.25, min_overall_px=40, min_seat_px=20):
+    return flag_height_errors(
+        layout, "seat_h", threshold=threshold,
+        min_overall_px=min_overall_px, min_dim_px=min_seat_px,
+    )
 
 
 def calculate_layout(bbox, specs, anchors=None):
@@ -95,7 +102,9 @@ def calculate_layout(bbox, specs, anchors=None):
 
     overall = specs.get("overall") or {}
     seat = specs.get("seat") or {}
+    arm = specs.get("arm") or specs.get("arms") or {}
     cushion = specs.get("cushion") or {}
+    arm_top = anchors.get("arm_top")
 
     # Overall Height: backrest crown → rear-foot floor
     if overall.get("h") and top_backrest and rear_foot_base:
@@ -143,6 +152,25 @@ def calculate_layout(bbox, specs, anchors=None):
             "offset": 55,
         })
 
+    # Arm Height: floor → left armrest top (between seat H and overall H).
+    if not arm.get("h"):
+        print("arm_h skipped: no arm.h in parsed specs")
+    elif not arm_top:
+        print("arm_h skipped: no arm_top anchor (vision miss or Gemini down)")
+    elif arm.get("h") and arm_top and rear_foot_base:
+        if seat_top and arm_top[1] >= seat_top[1]:
+            print("arm_h skipped: arm top at or below seat top")
+        else:
+            x_col_arm = rear_foot_base[0]
+            layout.append({
+                "type": "arm_h",
+                "text": arm["h"],
+                "p1": (x_col_arm, arm_top[1]),
+                "p2": (x_col_arm, rear_foot_base[1]),
+                "orientation": "vertical",
+                "offset": 88,
+            })
+
     # Seat W: cushion front-left → front-right (full front lip).
     if seat.get("w") and not _same_dim(seat.get("w"), overall.get("w")):
         cfl = anchors.get("cushion_front_left") or seat_left
@@ -184,4 +212,6 @@ def calculate_layout(bbox, specs, anchors=None):
             "offset": 20,
         })
 
-    return flag_seat_height_errors(layout)
+    flag_height_errors(layout, "seat_h")
+    flag_height_errors(layout, "arm_h")
+    return layout

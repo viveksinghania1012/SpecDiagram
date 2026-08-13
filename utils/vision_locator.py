@@ -6,6 +6,7 @@ import numpy as np
 from google import genai
 from google.genai import types
 from PIL import Image
+from utils.gemini_retry import with_gemini_retry
 
 
 CORNER_PROMPT = """You are labeling a black-and-white chair schematic for CAD dimensioning.
@@ -21,6 +22,7 @@ Keys (all required; use null only if truly invisible):
 {
   "top_backrest": [x, y],
   "seat_top": [x, y],
+  "arm_top_left": [x, y],
   "cushion_front_left": [x, y],
   "cushion_front_right": [x, y],
   "cushion_rear_left": [x, y],
@@ -34,6 +36,10 @@ Definitions (critical):
 - seat_top: TOP sitting surface of the seat/cushion on the LEFT side
   (where a seat-height tick would land). NEVER the bottom of the backrest,
   NEVER the apron/rail under the cushion, NEVER the seat deck under a cushion.
+- arm_top_left: TOP of the LEFT armrest (elbow rest) on the left side.
+  Floor-to-here is arm height. Use the left arm, not the foreshortened right.
+  On a wrap-around barrel, use the top of the arm rail where the elbow sits,
+  NOT the backrest crown and NOT the seat. Null if the chair is armless.
 - cushion_front_left / cushion_front_right: front corners of the seat TOP face
   (the edge a seat-width line should follow).
 - cushion_rear_left: rear-left corner of the seat TOP at the seat/back junction.
@@ -108,18 +114,22 @@ def get_schematic_corners(image_path) -> dict:
     gray = np.array(image.convert("L"))
 
     client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
-    response = client.models.generate_content(
-        model="gemini-flash-latest",
-        contents=[CORNER_PROMPT, image],
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
+    response = with_gemini_retry(
+        lambda: client.models.generate_content(
+            model="gemini-flash-latest",
+            contents=[CORNER_PROMPT, image],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+            ),
         ),
+        label="vision_corners",
     )
 
     data = json.loads(response.text)
     keys = (
         "top_backrest",
         "seat_top",
+        "arm_top_left",
         "cushion_front_left",
         "cushion_front_right",
         "cushion_rear_left",
@@ -159,6 +169,11 @@ def merge_vision_anchors(pixel_anchors: dict, vision_points: dict) -> dict:
         # Keep seat-H column on rear-left foot x when available.
         rx = (merged.get("rear_foot_base") or st)[0]
         merged["seat_top"] = (rx, st[1])
+
+    if vision_points.get("arm_top_left"):
+        at = vision_points["arm_top_left"]
+        rx = (merged.get("rear_foot_base") or at)[0]
+        merged["arm_top"] = (rx, at[1])
 
     cfl = vision_points.get("cushion_front_left")
     cfr = vision_points.get("cushion_front_right")

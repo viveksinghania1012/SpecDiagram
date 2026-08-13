@@ -15,7 +15,7 @@ from utils.vision_locator import get_schematic_corners, merge_vision_anchors
 load_dotenv()
 
 # Room for dimension lines outside the chair (W sits below the front feet).
-PAD_LEFT, PAD_TOP, PAD_RIGHT, PAD_BOTTOM = 140, 24, 48, 96
+PAD_LEFT, PAD_TOP, PAD_RIGHT, PAD_BOTTOM = 156, 24, 48, 96
 
 
 def _pad_schematic(img, anchors):
@@ -52,8 +52,9 @@ def generate_base(input_image, specs=None, raw_specs_text=None):
     # Pass the uploaded PIL image to the API service
     schematic_img = generate_clean_schematic(input_image)
 
-    # Prefer already-parsed JSON; fall back to parsing raw PDP text
-    if not specs and raw_specs_text and str(raw_specs_text).strip():
+    # Re-parse raw PDP text when present so newly added lines (e.g. Arms 26" H)
+    # are not ignored because an older parsed JSON is still in the UI.
+    if raw_specs_text and str(raw_specs_text).strip():
         specs = parse_spec_text(raw_specs_text)
 
     if not specs:

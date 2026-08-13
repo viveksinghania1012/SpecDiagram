@@ -3,6 +3,7 @@ from io import BytesIO
 from PIL import Image
 from google import genai
 from google.genai.types import GenerateContentConfig, Modality
+from utils.gemini_retry import with_gemini_retry
 
 def generate_clean_schematic(input_photo_pil):
     """
@@ -26,12 +27,15 @@ def generate_clean_schematic(input_photo_pil):
     """
 
     # Pass the text and PIL Image directly in a list to bypass Part validation errors
-    response = client.models.generate_content(
-        model="gemini-2.5-flash-image",
-        contents=[schematic_prompt, input_photo_pil],
-        config=GenerateContentConfig(
-            response_modalities=[Modality.IMAGE],
-        )
+    response = with_gemini_retry(
+        lambda: client.models.generate_content(
+            model="gemini-2.5-flash-image",
+            contents=[schematic_prompt, input_photo_pil],
+            config=GenerateContentConfig(
+                response_modalities=[Modality.IMAGE],
+            ),
+        ),
+        label="schematic",
     )
     
     for part in response.candidates[0].content.parts:

@@ -95,6 +95,7 @@ def generate_base(input_image, specs=None, raw_specs_text=None):
                 p2,
                 orientation=item.get("orientation", "vertical"),
                 offset=item.get("offset", 50),
+                flagged=bool(item.get("flagged")),
             )
     except Exception as exc:
         print(f"edge_detector/layout failed: {exc}")

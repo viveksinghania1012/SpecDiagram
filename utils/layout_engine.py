@@ -24,6 +24,53 @@ def _same_dim(a, b, tol=0.15):
     return abs(ia - ib) <= tol
 
 
+def _vertical_span_px(item):
+    p1, p2 = item.get("p1"), item.get("p2")
+    if not p1 or not p2:
+        return 0.0
+    return abs(float(p2[1]) - float(p1[1]))
+
+
+def flag_seat_height_errors(layout, threshold=0.25, min_overall_px=40, min_seat_px=20):
+    """
+    Scale from overall H pixels/inches; flag seat H when given is ≥threshold off.
+    Leaves the dim in place; drawing uses flagged to color the number red.
+    """
+    overall_h = next((i for i in layout if i.get("type") == "overall_h"), None)
+    seat_h = next((i for i in layout if i.get("type") == "seat_h"), None)
+    if not overall_h or not seat_h:
+        return layout
+
+    overall_in = _inches(overall_h.get("text"))
+    given_in = _inches(seat_h.get("text"))
+    overall_px = _vertical_span_px(overall_h)
+    seat_px = _vertical_span_px(seat_h)
+    if (
+        overall_in is None
+        or overall_in <= 0
+        or given_in is None
+        or given_in <= 0
+        or overall_px < min_overall_px
+        or seat_px < min_seat_px
+    ):
+        return layout
+
+    measured_in = seat_px * (overall_in / overall_px)
+    rel_err = abs(measured_in - given_in) / given_in
+    if rel_err >= threshold:
+        seat_h["flagged"] = True
+        print(
+            f"audit seat_h: given {given_in}\" measured ~{measured_in:.1f}\" "
+            f"({rel_err:.0%} off) → flagged"
+        )
+    else:
+        print(
+            f"audit seat_h: given {given_in}\" measured ~{measured_in:.1f}\" "
+            f"({rel_err:.0%} off) → ok"
+        )
+    return layout
+
+
 def calculate_layout(bbox, specs, anchors=None):
     """
     bbox: (min_x, min_y, max_x, max_y) of the chair (fallback / compat)
@@ -137,4 +184,4 @@ def calculate_layout(bbox, specs, anchors=None):
             "offset": 20,
         })
 
-    return layout
+    return flag_seat_height_errors(layout)

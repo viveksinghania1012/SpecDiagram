@@ -19,12 +19,12 @@ def _short_ticks(draw, p1, p2, color, width):
         )
 
 
-def add_dimension_line(img, text, coord1, coord2, orientation="vertical", offset=50):
+def add_dimension_line(img, text, coord1, coord2, orientation="vertical", offset=50, flagged=False):
     output_img = img.copy().convert("RGB")
     draw = ImageDraw.Draw(output_img)
     
     line_color = (0, 0, 0)
-    text_color = (0, 0, 0)
+    text_color = (200, 0, 0) if flagged else (0, 0, 0)
     bg_color = (255, 255, 255)
     line_width = 2
     
